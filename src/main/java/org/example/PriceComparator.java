@@ -93,6 +93,115 @@ public class PriceComparator {
 
         // print inside the function
         comparator.recentDiscounts();
+
+        // Search by store
+        System.out.println("\n1. Testing search by STORE:");
+        comparator.printPriceHistory("kaufland");
+
+        // Search by product_category
+        System.out.println("\n2. Testing search by CATEGORY:");
+        comparator.printPriceHistory("lactate");
+
+        // Search by brand
+        System.out.println("\n3. Testing search by BRAND:");
+        comparator.printPriceHistory("zuzu");
+
+    }
+    private String extractDateFromFilename(String filename) {
+        // prices/kaufland_2025-05-01.csv
+        String baseName = filename.substring(filename.lastIndexOf("/") + 1);
+        String[] parts = baseName.split("_");
+        return parts[parts.length - 1].replace(".csv", "");
+    }
+    private boolean matchesSearch(Price price, String store, String searchTerm) {
+        return store.toLowerCase().contains(searchTerm) ||
+                price.getProductCategory().toLowerCase().contains(searchTerm) ||
+                price.getBrand().toLowerCase().contains(searchTerm) ||
+                price.getProductName().toLowerCase().contains(searchTerm);
+    }
+
+    public List<PricePoint> getPriceHistory(String searchTerm) {
+        List<PricePoint> pricePoints = new ArrayList<>();
+        String search = searchTerm.toLowerCase().trim();
+
+        for (String priceFile : PRICE_FILES) {
+            String store = extractStoreFromFilename(priceFile);
+            String dateStr = extractDateFromFilename(priceFile);
+
+            List<Price> prices = loadPricesFromCsv(priceFile);
+            // match the discount file path
+            String discountFile = "discounts/" + store + "_discounts_" + dateStr + ".csv";
+            List<Discount> discounts = loadDiscountsFromCsv(discountFile);
+
+            for (Price price : prices) {
+                if (!matchesSearch(price, store, search)) {
+                    continue;
+                }
+
+                // Calculate final price with discount
+                double regularPrice = price.getPrice() / 100.0;
+                double finalPrice = regularPrice;
+                boolean hasDiscount = false;
+
+                for (Discount discount : discounts) {
+                    if (discount.getProductId().equals(price.getProductId())) {
+                        // we get the available intervals of the discount for each store
+                        LocalDate discountStart = LocalDate.parse(discount.getFromDate(), DATE_FORMATTER);
+                        LocalDate discountEnd = LocalDate.parse(discount.getToDate(), DATE_FORMATTER);
+                        LocalDate priceDate = LocalDate.parse(dateStr, DATE_FORMATTER);
+
+                        if (!priceDate.isBefore(discountStart) && !priceDate.isAfter(discountEnd)) {
+                            finalPrice = regularPrice * (1 - discount.getDiscountPercentage() / 100.0);
+                            hasDiscount = true;
+                            break;
+                        }
+                    }
+                }
+
+                pricePoints.add(new PricePoint(
+                        dateStr, price.getProductName(), store, price.getBrand(),
+                        price.getProductCategory(), regularPrice, finalPrice, hasDiscount
+                ));
+            }
+        }
+        return pricePoints.stream()
+                .sorted(Comparator.comparing(PricePoint::getDate))
+                .collect(Collectors.toList());
+    }
+
+
+
+
+    public void printPriceHistory(String searchTerm) {
+        List<PricePoint> history = getPriceHistory(searchTerm);
+
+        System.out.println("\n=== PRICE HISTORY FOR: " + searchTerm.toUpperCase() + " ===");
+
+        if (history.isEmpty()) {
+            System.out.println("No price data found for: " + searchTerm);
+            return;
+        }
+
+        // lapte zuzu (Zuzu)
+        Map<String, List<PricePoint>> byProduct = history.stream()
+                .collect(Collectors.groupingBy(p -> p.getProductName() + " (" + p.getBrand() + ")"));
+
+        byProduct.forEach((product, points) -> {
+            System.out.println("\n" + product + ":");
+            points.forEach(point -> {
+                String priceInfo = point.hasDiscount() ?
+                        String.format("%.2f (was %.2f)", point.getFinalPrice(), point.getRegularPrice()) :
+                        String.format("%.2f", point.getFinalPrice());
+
+                System.out.printf("  %s - %s: %s RON%s%n",
+                        point.getDate(),
+                        point.getStore().toUpperCase(),
+                        priceInfo,
+                        point.hasDiscount() ? " [DISCOUNT]" : "");
+            });
+        });
+
+        System.out.printf("\nTotal data points found: %d%n", history.size());
     }
 
     public void recentDiscounts() {

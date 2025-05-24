@@ -3,6 +3,8 @@ package org.example;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
@@ -23,6 +25,30 @@ class PriceComparatorTest {
         priceComparator.loadAllData();
     }
 
+    @Test
+    void testRecentDiscountsPrintsOutput() {
+        ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outContent));
+
+        priceComparator.recentDiscounts();
+
+        String output = outContent.toString();
+        assertFalse(output.isBlank(), "recentDiscounts should print output");
+        assertEquals(10, output.length(), "Expected discount information in output");
+        // output.toLowerCase().contains("discount") is needed...?? hmmm
+    }
+
+    @Test
+    void testPrintPriceHistoryByStore() {
+        ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outContent));
+
+        priceComparator.printPriceHistory("kaufland");
+
+        String output = outContent.toString().toLowerCase();
+        assertFalse(output.isBlank(), "Output should not be empty for store search");
+        assertTrue(output.contains("kaufland"), "Output should contain store name");
+    }
     @Test
     void testComparePrices() {
         // Test comparing prices for "lapte" (milk)
