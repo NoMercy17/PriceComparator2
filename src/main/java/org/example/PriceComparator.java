@@ -90,43 +90,62 @@ public class PriceComparator {
 
         System.out.println("=== 10 products with the biggest discount ===");
         comparator.listBestDiscounts();
+
+        // print inside the function
+        comparator.recentDiscounts();
     }
 
+    public void recentDiscounts() {
+        List<Discount> allDiscounts = new ArrayList<>();
+
+        for (String discountFile : DISCOUNT_FILES) {
+            List<Discount> discounts = loadDiscountsFromCsv(discountFile);
+            allDiscounts.addAll(discounts);
+        }
+
+        List<Discount> recentDiscounts = allDiscounts.stream()
+                .filter(discount -> {
+                    LocalDate fromDate = LocalDate.parse(discount.getFromDate(), DATE_FORMATTER);
+
+                    return !fromDate.isBefore(currentDate.minusDays(1)) && !fromDate.isAfter(currentDate);
+                }).sorted( (d1,d2) -> {
+                    LocalDate date1 = LocalDate.parse(d1.getFromDate(), DATE_FORMATTER);
+                    LocalDate date2 = LocalDate.parse(d2.getFromDate(), DATE_FORMATTER);
+                    return date1.compareTo(date2);
+                })
+                .toList();
+
+        System.out.println("\n=== RECENT DISCOUNTS (Last 24 Hours) ===");
+        if (recentDiscounts.isEmpty()) {
+            System.out.println("No discounts started in the last 24 hours.");
+        } else {
+            for (int i = 0; i < recentDiscounts.size(); i++) {
+                Discount discount = recentDiscounts.get(i);
+                System.out.printf("%d. %s - %s %.0f%s (%.0f%% OFF) - Started: %s (Valid until: %s)%n",
+                        i + 1,
+                        discount.getProductName(),
+                        discount.getBrand(),
+                        discount.getPackageQuantity(),
+                        discount.getPackageUnit(),
+                        discount.getDiscountPercentage(),
+                        discount.getFromDate(),
+                        discount.getToDate());
+            }
+            System.out.printf("Total recent discounts found: %d%n", recentDiscounts.size());
+        }
+
+    }
     public void listBestDiscounts() {
         List<Discount> allDiscounts = new ArrayList<>();
 
         for (String discountFile : DISCOUNT_FILES) {
-            System.out.println("Loading discounts from: " + discountFile);
             List<Discount> discounts = loadDiscountsFromCsv(discountFile);
-            System.out.println("Loaded " + discounts.size() + " discounts from " + discountFile);
-
-            for (int i = 0; i < Math.min(3, discounts.size()); i++) {
-                Discount d = discounts.get(i);
-                System.out.printf("  Sample: %s - %.0f%% discount%n",
-                        d.getProductName(), d.getDiscountPercentage());
-            }
-
             allDiscounts.addAll(discounts);
         }
-
-        System.out.println("Total discounts loaded: " + allDiscounts.size());
-
-        if (!allDiscounts.isEmpty()) {
-            float maxDiscount = allDiscounts.stream()
-                    .map(Discount::getDiscountPercentage)
-                    .max(Float::compare)
-                    .orElse(0f);
-            float minDiscount = allDiscounts.stream()
-                    .map(Discount::getDiscountPercentage)
-                    .min(Float::compare)
-                    .orElse(0f);
-            System.out.printf("Discount range: %.0f%% to %.0f%%%n", minDiscount, maxDiscount);
-        }
-
         List<Discount> topDiscounts = allDiscounts.stream()
                 .sorted((d1, d2) -> Float.compare(d2.getDiscountPercentage(), d1.getDiscountPercentage()))
                 .limit(10)
-                .collect(Collectors.toList());
+                .toList();
 
         System.out.println("\n=== TOP 10 DISCOUNTS ===");
         for (int i = 0; i < topDiscounts.size(); i++) {
