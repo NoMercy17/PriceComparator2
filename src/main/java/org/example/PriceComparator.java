@@ -1,33 +1,43 @@
 package org.example;
 
 import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 
 public class PriceComparator {
-    private static final String PRICES_DIR = "prices";
-    private static final String DISCOUNTS_DIR = "discounts";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private Map<String, Map<String, Price>> pricesByStoreAndProduct = new HashMap<>();
     private Map<String, List<Discount>> discountsByStore = new HashMap<>();
     private LocalDate currentDate;
 
+    private static final List<String> PRICE_FILES = Arrays.asList(
+            "prices/kaufland_2025-05-01.csv",
+            "prices/kaufland_2025-05-08.csv",
+            "prices/lidl_2025-05-01.csv",
+            "prices/lidl_2025-05-08.csv",
+            "prices/profi_2025-05-01.csv",
+            "prices/profi_2025-05-08.csv"
+    );
+
+    private static final List<String> DISCOUNT_FILES = Arrays.asList(
+            "discounts/kaufland_discounts_2025-05-01.csv",
+            "discounts/kaufland_discounts_2025-05-08.csv",
+            "discounts/lidl_discounts_2025-05-01.csv",
+            "discounts/lidl_discounts_2025-05-08.csv",
+            "discounts/profi_discounts_2025-05-01.csv",
+            "discounts/profi_discounts_2025-05-08.csv"
+    );
+
     public static void main(String[] args) {
         PriceComparator comparator = new PriceComparator();
-
         comparator.setCurrentDate(LocalDate.parse("2025-05-08", DATE_FORMATTER));
 
-        // Load all price and discount data
         comparator.loadAllData();
 
         List<ShoppingItem> shoppingList = Arrays.asList(
@@ -66,7 +76,6 @@ public class PriceComparator {
         System.out.println("\nTOTAL COST: " + String.format("%.2f", plan.getTotalCost() / 100.0) + " RON");
         System.out.println("TOTAL SAVINGS: " + String.format("%.2f", plan.getTotalSavings() / 100.0) + " RON");
 
-        // Display price comparison
         System.out.println("\n=== PRICE COMPARISON - LAPTE ===");
         comparator.comparePrices("lapte").forEach((store, prices) -> {
             prices.forEach(price -> {
@@ -78,6 +87,60 @@ public class PriceComparator {
                         price.getPrice() / 100.0);
             });
         });
+
+        System.out.println("=== 10 products with the biggest discount ===");
+        comparator.listBestDiscounts();
+    }
+
+    public void listBestDiscounts() {
+        List<Discount> allDiscounts = new ArrayList<>();
+
+        for (String discountFile : DISCOUNT_FILES) {
+            System.out.println("Loading discounts from: " + discountFile);
+            List<Discount> discounts = loadDiscountsFromCsv(discountFile);
+            System.out.println("Loaded " + discounts.size() + " discounts from " + discountFile);
+
+            for (int i = 0; i < Math.min(3, discounts.size()); i++) {
+                Discount d = discounts.get(i);
+                System.out.printf("  Sample: %s - %.0f%% discount%n",
+                        d.getProductName(), d.getDiscountPercentage());
+            }
+
+            allDiscounts.addAll(discounts);
+        }
+
+        System.out.println("Total discounts loaded: " + allDiscounts.size());
+
+        if (!allDiscounts.isEmpty()) {
+            float maxDiscount = allDiscounts.stream()
+                    .map(Discount::getDiscountPercentage)
+                    .max(Float::compare)
+                    .orElse(0f);
+            float minDiscount = allDiscounts.stream()
+                    .map(Discount::getDiscountPercentage)
+                    .min(Float::compare)
+                    .orElse(0f);
+            System.out.printf("Discount range: %.0f%% to %.0f%%%n", minDiscount, maxDiscount);
+        }
+
+        List<Discount> topDiscounts = allDiscounts.stream()
+                .sorted((d1, d2) -> Float.compare(d2.getDiscountPercentage(), d1.getDiscountPercentage()))
+                .limit(10)
+                .collect(Collectors.toList());
+
+        System.out.println("\n=== TOP 10 DISCOUNTS ===");
+        for (int i = 0; i < topDiscounts.size(); i++) {
+            Discount discount = topDiscounts.get(i);
+            System.out.printf("%d. %s - %s %.0f%s (%.0f%% OFF) - Valid: %s to %s%n",
+                    i + 1,
+                    discount.getProductName(),
+                    discount.getBrand(),
+                    discount.getPackageQuantity(),
+                    discount.getPackageUnit(),
+                    discount.getDiscountPercentage(),
+                    discount.getFromDate(),
+                    discount.getToDate());
+        }
     }
 
     public void setCurrentDate(LocalDate date) {
@@ -88,36 +151,29 @@ public class PriceComparator {
         return currentDate;
     }
 
-    /**
-     * Loads the price and discount from CSV files
-     */
     public void loadAllData() {
         pricesByStoreAndProduct.clear();
         discountsByStore.clear();
 
-        List<String> priceFiles = listFilesInDirectory(PRICES_DIR);
-        for (String file : priceFiles) {
+        for (String file : PRICE_FILES) {
             String store = extractStoreFromFilename(file);
-            List<Price> prices = loadPricesFromCsv(PRICES_DIR + "/" + file);
+            List<Price> prices = loadPricesFromCsv(file);
 
             Map<String, Price> productPrices = pricesByStoreAndProduct
                     .computeIfAbsent(store, k -> new HashMap<>());
 
             for (Price price : prices) {
-                // Store both by ID and partial name match for better lookup
                 productPrices.put(price.getProductId().toLowerCase(), price);
                 productPrices.put(price.getProductName().toLowerCase(), price);
             }
         }
 
-        List<String> discountFiles = listFilesInDirectory(DISCOUNTS_DIR);
-        for (String file : discountFiles) {
+        for (String file : DISCOUNT_FILES) {
             String store = extractStoreFromFilename(file);
-            List<Discount> discounts = loadDiscountsFromCsv(DISCOUNTS_DIR + "/" + file);
+            List<Discount> discounts = loadDiscountsFromCsv(file);
             discountsByStore.put(store, discounts);
         }
     }
-
 
     public ShoppingPlan generateOptimizedShoppingPlan(List<ShoppingItem> shoppingList) {
         ShoppingPlan plan = new ShoppingPlan();
@@ -127,7 +183,7 @@ public class PriceComparator {
 
             if (bestDeal != null) {
                 plan.addItem(bestDeal.getStore(), new ShoppingPlanItem(
-                        bestDeal.getProductName(), // Use actual product name from best deal
+                        bestDeal.getProductName(),
                         item.getQuantity(),
                         bestDeal.getRegularPrice(),
                         bestDeal.getFinalPrice(),
@@ -138,7 +194,6 @@ public class PriceComparator {
 
         return plan;
     }
-
 
     public BestDeal findBestDealForProduct(String productName, int quantity) {
         String normalizedProductName = productName.toLowerCase();
@@ -151,12 +206,10 @@ public class PriceComparator {
         for (String store : pricesByStoreAndProduct.keySet()) {
             Map<String, Price> storePrices = pricesByStoreAndProduct.get(store);
 
-            // Try to find product by exact name
             Price price = null;
             if (storePrices.containsKey(normalizedProductName)) {
                 price = storePrices.get(normalizedProductName);
             } else {
-                // or by partial match
                 for (String key : storePrices.keySet()) {
                     if (key.contains(normalizedProductName)) {
                         price = storePrices.get(key);
@@ -172,10 +225,8 @@ public class PriceComparator {
             int currentPrice = price.getPrice();
             boolean discounted = false;
 
-            // Check if there's an active discount for this product
             if (discountsByStore.containsKey(store)) {
                 for (Discount discount : discountsByStore.get(store)) {
-                    // Match discount by product ID or name
                     if (discount.getProductId().equalsIgnoreCase(price.getProductId()) ||
                             discount.getProductName().toLowerCase().contains(normalizedProductName)) {
 
@@ -184,7 +235,6 @@ public class PriceComparator {
 
                         if ((currentDate.isEqual(fromDate) || currentDate.isAfter(fromDate)) &&
                                 (currentDate.isEqual(toDate) || currentDate.isBefore(toDate))) {
-                            // Apply discount using the percentage from the discount
                             double discountFactor = 1.0 - (discount.getDiscountPercentage() / 100.0);
                             currentPrice = (int)(currentPrice * discountFactor);
                             discounted = true;
@@ -210,7 +260,6 @@ public class PriceComparator {
         return null;
     }
 
-
     public Map<String, List<Price>> comparePrices(String productName) {
         Map<String, List<Price>> results = new HashMap<>();
         String normalizedName = productName.toLowerCase();
@@ -229,7 +278,6 @@ public class PriceComparator {
         return results;
     }
 
-
     public Set<String> getAllCategories() {
         Set<String> categories = new HashSet<>();
 
@@ -242,97 +290,99 @@ public class PriceComparator {
         return categories;
     }
 
-
-    /**
-     * Utility methods for loading data
-     */
-    private List<String> listFilesInDirectory(String directory) {
-        List<String> fileList = new ArrayList<>();
-        try (Stream<Path> paths = Files.list(Paths.get(directory))) {
-            fileList = paths
-                    .filter(Files::isRegularFile)
-                    .map(Path::getFileName)
-                    .map(Object::toString)
-                    .collect(Collectors.toList());
-        } catch (IOException e) {
-            System.err.println("Error listing files in directory: " + directory);
-            e.printStackTrace();
-        }
-        return fileList;
-    }
-
     private String extractStoreFromFilename(String filename) {
-        // Example: kaufland_2025-05-01.csv -> kaufland
-        return filename.split("_")[0];
+        String baseName = filename.substring(filename.lastIndexOf("/") + 1);
+        return baseName.split("_")[0];
     }
 
-    private List<Price> loadPricesFromCsv(String filePath) {
+    private List<Price> loadPricesFromCsv(String resourcePath) {
         List<Price> prices = new ArrayList<>();
 
-        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
-            String line = br.readLine(); // Skip header
+        try {
+            InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath);
+            if (is == null) {
+                System.err.println("Resource not found: " + resourcePath);
+                return prices;
+            }
 
-            while ((line = br.readLine()) != null) {
-                String[] data = line.split(";");
-                if (data.length >= 8) {
-                    try {
-                        // Convert price from string (e.g., "10.10") to cents (1010)
-                        float rawPrice = Float.parseFloat(data[6]);
-                        int priceInCents = (int)(rawPrice * 100);
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+                String line = br.readLine(); // Skip header
 
-                        Price price = new Price(
-                                data[0], // product_id
-                                data[1], // product_name
-                                data[2], // product_category
-                                data[3], // brand
-                                Float.parseFloat(data[4]), // package_quantity
-                                data[5], // package_unit
-                                priceInCents, // price (in cents)
-                                data[7]  // currency
-                        );
-                        prices.add(price);
-                    } catch (NumberFormatException e) {
-                        System.err.println("Error parsing numeric value in line: " + line);
+
+                while ((line = br.readLine()) != null) {
+                    String[] data = line.split(";");
+                    if (data.length >= 8) {
+                        try {
+                            Price price = getPrice(data);
+                            prices.add(price);
+                        } catch (NumberFormatException e) {
+                            System.err.println("Error parsing numeric value in line: " + line);
+                        }
                     }
                 }
             }
         } catch (IOException e) {
-            System.err.println("Error reading price file: " + filePath);
+            System.err.println("Error reading price file: " + resourcePath);
             e.printStackTrace();
         }
 
         return prices;
     }
 
-    private List<Discount> loadDiscountsFromCsv(String filePath) {
+    private static Price getPrice(String[] data) {
+        float rawPrice = Float.parseFloat(data[6]);
+        int priceInCents = (int)(rawPrice * 100);
+
+        Price price = new Price(
+                data[0],
+                data[1],
+                data[2],
+                data[3],
+                Float.parseFloat(data[4]),
+                data[5],
+                priceInCents,
+                data[7]
+        );
+        return price;
+    }
+
+    private List<Discount> loadDiscountsFromCsv(String resourcePath) {
         List<Discount> discounts = new ArrayList<>();
 
-        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
-            String line = br.readLine(); // Skip header
+        try {
+            InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath);
+            if (is == null) {
+                System.err.println("Resource not found: " + resourcePath);
+                return discounts;
+            }
 
-            while ((line = br.readLine()) != null) {
-                String[] data = line.split(";");
-                if (data.length >= 9) { // Updated to include discount percentage
-                    try {
-                        Discount discount = new Discount(
-                                data[0], // product_id
-                                data[1], // product_name
-                                data[2], // brand
-                                Float.parseFloat(data[3]), // package_quantity
-                                data[4], // package_unit
-                                data[5], // product_category
-                                data[6], // from_date
-                                data[7], // to_date
-                                Float.parseFloat(data[8]) // percentage_of_discount
-                        );
-                        discounts.add(discount);
-                    } catch (NumberFormatException e) {
-                        System.err.println("Error parsing numeric value in line: " + line);
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+                String line = br.readLine(); // Skip header
+
+                while ((line = br.readLine()) != null) {
+                    String[] data = line.split(";");
+                    if (data.length >= 9) {
+                        try {
+                            Discount discount = new Discount(
+                                    data[0],
+                                    data[1],
+                                    data[2],
+                                    Float.parseFloat(data[3]),
+                                    data[4],
+                                    data[5],
+                                    data[6],
+                                    data[7],
+                                    Float.parseFloat(data[8])
+                            );
+                            discounts.add(discount);
+                        } catch (NumberFormatException e) {
+                            System.err.println("Error parsing numeric value in line: " + line);
+                        }
                     }
                 }
             }
         } catch (IOException e) {
-            System.err.println("Error reading discount file: " + filePath);
+            System.err.println("Error reading discount file: " + resourcePath);
             e.printStackTrace();
         }
 
