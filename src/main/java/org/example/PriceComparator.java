@@ -106,7 +106,21 @@ public class PriceComparator {
         System.out.println("\n3. Testing search by BRAND:");
         comparator.printPriceHistory("zuzu");
 
+
+        // Test: Find best value
+        System.out.println("\n1. Best value per unit for MILK:");
+        comparator.findBestValuePerUnit("lapte");
+
+        System.out.println("\n2. Best value per unit for DAIRY PRODUCTS:");
+        comparator.findBestValuePerUnit("lactate");
+
+        System.out.println("\n3. Package size comparison for BREAD:");
+        comparator.comparePackageSizes("pâine");
+
+        System.out.println("\n4. Best value per unit for PASTA:");
+        comparator.findBestValuePerUnit("paste");
     }
+
     private String extractDateFromFilename(String filename) {
         // prices/kaufland_2025-05-01.csv
         String baseName = filename.substring(filename.lastIndexOf("/") + 1);
