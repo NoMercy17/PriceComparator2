@@ -342,9 +342,4 @@ Active Alerts:
 Triggered Alerts:
  ALERT: lapte is now 3.83 RON (target: ≤ 4.00 RON) at KAUFLAND
  ALERT: pâine is now 2.20 RON (target: ≤ 2.50 RON) at KAUFLAND
-```
 
----
-
-**Contact**: hello@accesa.eu  
-**Website**: accesa.eu
