@@ -119,8 +119,91 @@ public class PriceComparator {
 
         System.out.println("\n4. Best value per unit for PASTA:");
         comparator.findBestValuePerUnit("paste");
+
     }
 
+
+    public List<ValuePerUnitItem> analyzeValuePerUnit(String productName) {
+        List<ValuePerUnitItem> items = new ArrayList<>();
+        String search = productName.toLowerCase().trim();
+
+        for(String store: pricesByStoreAndProduct.keySet()){
+            Map<String, Price> storePrices = pricesByStoreAndProduct.get(store);
+
+            for(Price price: storePrices.values()){
+                if(!matchesSearch(price, store, search)){
+                    continue;
+                }
+                // skip if package is invalid
+                if(price.getPackageQuantity() <= 0 ){
+                    continue;
+                }
+
+                // Calculate final price with current discounts
+                double regularPrice = price.getPrice() / 100.0;
+                double finalPrice = regularPrice;
+                boolean hasDiscount = false;
+                float discountPercentage = 0f;
+                if (discountsByStore.containsKey(store)) {
+                    for (Discount discount : discountsByStore.get(store)) {
+                        if (discount.getProductId().equals(price.getProductId())) {
+                            LocalDate fromDate = LocalDate.parse(discount.getFromDate(), DATE_FORMATTER);
+                            LocalDate toDate = LocalDate.parse(discount.getToDate(), DATE_FORMATTER);
+
+                            if (!currentDate.isBefore(fromDate) && !currentDate.isAfter(toDate)) {
+                                finalPrice = regularPrice * (1 - discount.getDiscountPercentage() / 100.0);
+                                hasDiscount = true;
+                                discountPercentage = discount.getDiscountPercentage();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                ValuePerUnitItem item = new ValuePerUnitItem(
+                        price.getProductName(), price.getBrand(), store, regularPrice, finalPrice,
+                        price.getPackageQuantity(), price.getPackageUnit(), hasDiscount, discountPercentage
+                );
+
+                items.add(item);
+            }
+        }
+        return items;
+    }
+
+    public void findBestValuePerUnit(String unit) {
+        List<ValuePerUnitItem> items = analyzeValuePerUnit(unit);
+        if (items.isEmpty()) {
+            System.out.println("\n=== VALUE PER UNIT ANALYSIS ===");
+            System.out.println("No products found for: " + unit);
+            return;
+        }
+        // sort by finalValue, the lowest = best value
+        items.sort(Comparator.comparing(ValuePerUnitItem::getFinalValuePerUnit));
+        System.out.println("\n=== BEST VALUE PER UNIT: " + unit.toUpperCase() + " ===");
+        System.out.println("(Sorted by best value - lowest price per unit)");
+
+        for (int i = 0; i < Math.min(items.size(), 10); i++) {
+            ValuePerUnitItem item = items.get(i);
+
+            String priceInfo = item.hasDiscount() ?
+                    String.format("%.2f RON (was %.2f RON, %.0f%% OFF)",
+                            item.getFinalPrice(), item.getPrice(), item.getDiscountPercentage()) :
+                    String.format("%.2f RON", item.getFinalPrice());
+
+            String valueInfo = item.hasDiscount() ?
+                    String.format("%.2f RON/%s (was %.2f RON/%s)",
+                            item.getFinalValuePerUnit(), item.getPackageUnit(),
+                            item.getValuePerUnit(), item.getPackageUnit()) :
+                    String.format("%.2f RON/%s", item.getFinalValuePerUnit(), item.getPackageUnit());
+
+            System.out.printf("%d. %s%n", i + 1, item.getFullProductName());
+            System.out.printf("   Store: %s | Total: %s%n", item.getStore().toUpperCase(), priceInfo);
+            System.out.printf("   Value per unit: %s%s%n", valueInfo, item.hasDiscount() ? " ⭐ BEST DEAL" : "");
+            System.out.println();
+        }
+
+    }
     private String extractDateFromFilename(String filename) {
         // prices/kaufland_2025-05-01.csv
         String baseName = filename.substring(filename.lastIndexOf("/") + 1);
