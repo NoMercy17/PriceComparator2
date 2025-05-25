@@ -15,6 +15,7 @@ public class PriceComparator {
     private Map<String, Map<String, Price>> pricesByStoreAndProduct = new HashMap<>();
     private Map<String, List<Discount>> discountsByStore = new HashMap<>();
     private LocalDate currentDate;
+    private Map<String, PriceAlert> priceAlerts = new HashMap<>();
 
     private static final List<String> PRICE_FILES = Arrays.asList(
             "prices/kaufland_2025-05-01.csv",
@@ -120,8 +121,170 @@ public class PriceComparator {
         System.out.println("\n4. Best value per unit for PASTA:");
         comparator.findBestValuePerUnit("paste");
 
+        System.out.println("\n1. Setting up price alerts:");
+        comparator.addPriceAlert("lapte", 4.00);        // Set alert for milk at 4.00 RON or below
+        comparator.addPriceAlert("pâine", 2.50);        // Set alert for bread at 2.50 RON or below
+        comparator.addPriceAlert("brânză", 8.00);
+
+        // Show all active alerts
+        comparator.showActiveAlerts();
+
+        //Check if any alerts are triggered
+        System.out.println("\n2. Checking for triggered alerts:");
+        comparator.checkAndShowTriggeredAlerts();
+
+        // Remove an alert
+        System.out.println("\n5. Removing an alert:");
+        comparator.removePriceAlert("lapte");
+        comparator.showActiveAlerts();
+
+    }
+    // Price Alert Methods
+    public void addPriceAlert(String productName, double targetPrice) {
+        PriceAlert alert = new PriceAlert(productName, targetPrice);
+        priceAlerts.put(alert.getAlertId(), alert);
+        System.out.printf("Price alert added: %s at %.2f RON or below%n", productName, targetPrice);
     }
 
+    public void removePriceAlert(String productName) {
+        String searchKey = productName.toLowerCase();
+        String alertToRemove = null;
+
+        for (String alertId : priceAlerts.keySet()) {
+            if (alertId.startsWith(searchKey + "_")) {
+                alertToRemove = alertId;
+                break;
+            }
+        }
+
+        if (alertToRemove != null) {
+            priceAlerts.remove(alertToRemove);
+            System.out.printf("Price alert removed for: %s%n", productName);
+        } else {
+            System.out.printf("No price alert found for: %s%n", productName);
+        }
+    }
+    public void showActiveAlerts() {
+        System.out.println("\n=== ACTIVE PRICE ALERTS ===");
+        if (priceAlerts.isEmpty()) {
+            System.out.println("No active price alerts.");
+            return;
+        }
+
+        for (PriceAlert alert : priceAlerts.values()) {
+            if (alert.isActive()) {
+                System.out.printf("- %s: %.2f RON or below%n",
+                        alert.getProductName(), alert.getTargetPrice());
+            }
+        }
+    }
+
+    public void checkAndShowTriggeredAlerts() {
+        List<AlertMatch> triggeredAlerts = new ArrayList<>();
+
+        for (PriceAlert alert : priceAlerts.values()) {
+            if (!alert.isActive()) continue;
+
+            // Search for products that match this alert
+            for (String store : pricesByStoreAndProduct.keySet()) {
+                Map<String, Price> storeProducts = pricesByStoreAndProduct.get(store);
+
+                for (Price price : storeProducts.values()) {
+                    if (matchesProduct(price, alert.getProductName())) {
+                        double currentPrice = price.getPrice() / 100.0;
+                        boolean hasDiscount = false;
+                        float discountPercentage = 0f;
+
+                        // Check for current discounts
+                        if (discountsByStore.containsKey(store)) {
+                            for (Discount discount : discountsByStore.get(store)) {
+                                if (discount.getProductId().equals(price.getProductId())) {
+                                    LocalDate fromDate = LocalDate.parse(discount.getFromDate(), DATE_FORMATTER);
+                                    LocalDate toDate = LocalDate.parse(discount.getToDate(), DATE_FORMATTER);
+
+                                    if (!currentDate.isBefore(fromDate) && !currentDate.isAfter(toDate)) {
+                                        currentPrice = currentPrice * (1 - discount.getDiscountPercentage() / 100.0);
+                                        hasDiscount = true;
+                                        discountPercentage = discount.getDiscountPercentage();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check if price triggers the alert
+                        if (currentPrice <= alert.getTargetPrice()) {
+                            triggeredAlerts.add(new AlertMatch(
+                                    alert, store, price.getProductName(),
+                                    currentPrice, hasDiscount, discountPercentage
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        if (triggeredAlerts.isEmpty()) {
+            System.out.println("No price alerts triggered at current prices.");
+        } else {
+            System.out.println("🔔 PRICE ALERTS TRIGGERED:");
+            for (AlertMatch match : triggeredAlerts) {
+                String discountInfo = match.hasDiscount() ?
+                        String.format(" (%.0f%% OFF!)", match.getDiscountPercentage()) : "";
+
+                System.out.printf("✅ %s at %s: %.2f RON (target: %.2f RON)%s%n",
+                        match.getActualProductName(),
+                        match.getStore().toUpperCase(),
+                        match.getCurrentPrice(),
+                        match.getAlert().getTargetPrice(),
+                        discountInfo);
+            }
+        }
+    }
+
+    private boolean matchesProduct(Price price, String productName) {
+        String searchTerm = productName.toLowerCase().trim();
+        return price.getProductName().toLowerCase().contains(searchTerm) ||
+                price.getProductCategory().toLowerCase().contains(searchTerm) ||
+                price.getBrand().toLowerCase().contains(searchTerm);
+    }
+
+    public void comparePackageSizes(String productName) {
+        List<ValuePerUnitItem> items = analyzeValuePerUnit(productName);
+
+        if (items.isEmpty()) {
+            System.out.println("\n=== PACKAGE SIZE COMPARISON ===");
+            System.out.println("No products found for: " + productName);
+            return;
+        }
+        // we group by similar products (same base name, different sizes)
+        Map<String, List<ValuePerUnitItem>> groupedProducts = items.stream()
+                .collect(Collectors.groupingBy(item ->
+                        item.getProductName().toLowerCase().replaceAll("\\d+.*", "").trim()));
+        System.out.println("\n=== PACKAGE SIZE COMPARISON: " + productName.toUpperCase() + " ===");
+
+        groupedProducts.forEach((productGroup, productItems) -> {
+            if (productItems.size() > 1) {  // if multiple sizes exist
+                System.out.println("\n" + productGroup.toUpperCase() + ":");
+
+                productItems.stream()
+                        .sorted(Comparator.comparing(ValuePerUnitItem::getFinalValuePerUnit))
+                        .forEach(item -> {
+                            String badge = productItems.indexOf(item) == 0 ? " BEST VALUE" : "";
+
+                            System.out.printf("  %s %.0f%s - %s: %.2f RON (%.2f RON/%s)%s%n",
+                                    item.getBrand(),
+                                    item.getPackageQuantity(),
+                                    item.getPackageUnit(),
+                                    item.getStore().toUpperCase(),
+                                    item.getFinalPrice(),
+                                    item.getFinalValuePerUnit(),
+                                    item.getPackageUnit(),
+                                    badge);
+                        });
+            }
+        });
+    }
 
     public List<ValuePerUnitItem> analyzeValuePerUnit(String productName) {
         List<ValuePerUnitItem> items = new ArrayList<>();
@@ -199,7 +362,7 @@ public class PriceComparator {
 
             System.out.printf("%d. %s%n", i + 1, item.getFullProductName());
             System.out.printf("   Store: %s | Total: %s%n", item.getStore().toUpperCase(), priceInfo);
-            System.out.printf("   Value per unit: %s%s%n", valueInfo, item.hasDiscount() ? " ⭐ BEST DEAL" : "");
+            System.out.printf("   Value per unit: %s%s%n", valueInfo, item.hasDiscount() ? " BEST DEAL" : "");
             System.out.println();
         }
 
