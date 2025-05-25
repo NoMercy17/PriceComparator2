@@ -345,4 +345,5 @@ Triggered Alerts:
 
 ```
 Reflections & Areas for Improvement
+
 As for improvements to the code, I need to implement a more precise calculation of the value per unit — one that goes beyond two decimal places — since it becomes confusing with such a small range of values. Regarding the program's logic, I should have designed it in a way that avoids a "god class" responsible for everything. Additionally, I should avoid creating a separate class for every new functionality, especially when that class is similar to, or duplicates, one that already exists.
